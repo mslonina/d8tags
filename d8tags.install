@@ -32,13 +32,33 @@ function d8tags_schema_alter(&$schema) {
 
 function d8tags_install() {
   $spec = array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'description' => 'The user who created the term.',
-        'default' => 1,
-    );
-  db_add_field('taxonomy_term_data', 'uid', $spec);
+    'uid' => array(
+      'type' => 'int',
+      'unsigned' => TRUE,
+      'not null' => TRUE,
+      'description' => 'The user who created the term.',
+      'default' => 1,
+    ),
+    'created' => array(
+      'type' => 'int',
+      'unsigned' => TRUE,
+      'not null' => TRUE,
+      'description' => 'Term create Unix timestamp.',
+      'default' => time(),
+    ),
+    'updated' => array(
+      'type' => 'int',
+      'unsigned' => TRUE,
+      'not null' => TRUE,
+      'description' => 'Term update Unix timestamp.',
+      'default' => time(),
+    ),
+  );
+
+  db_add_field('taxonomy_term_data', 'uid', $spec['uid']);
+  db_add_field('taxonomy_term_data', 'created', $spec['created']);
+  db_add_field('taxonomy_term_data', 'updated', $spec['updated']);
+
 }
 
 /**
@@ -46,6 +66,6 @@ function d8tags_install() {
  */
 function d8tags_uninstall() {
   db_drop_field('taxonomy_term_data', 'uid');
-  //db_drop_field('taxonomy_term_data', 'created');
-  //db_drop_field('taxonomy_term_data', 'updated');
+  db_drop_field('taxonomy_term_data', 'created');
+  db_drop_field('taxonomy_term_data', 'updated');
 }
