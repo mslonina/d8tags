@@ -1,4 +1,5 @@
 <?php
+// $id$
 
 /**
  * Implements hook_permission().
@@ -56,11 +57,19 @@ function d8tags_edit_access($term) {
  * Implements hook_taxonomy_term_load().
  */
 function d8tags_taxonomy_term_load($terms) {
-  $result = db_query('SELECT tu.tid, tu.uid, tu.created, u.name FROM {taxonomy_term_users} tu INNER JOIN {users} u on u.uid = tu.uid WHERE tu.tid IN (:tids)', array(':tids' => array_keys($terms)));
+
+  $query = db_select('taxonomy_term_data', 't');
+  $query->fields('t', array('tid', 'uid'));
+  $query->fields('u', array('name'));
+  $query->join('users', 'u', 't.uid = u.uid');
+  $query->condition('t.tid', array_keys($terms), 'IN');
+
+  $result = $query->execute();
+
   foreach ($result as $record) {
     $terms[$record->tid]->uid = $record->uid;
     $terms[$record->tid]->author = $record->name;
-    $terms[$record->tid]->created = $record->created;
+    //$terms[$record->tid]->created = $record->created;
   }
 }
 
@@ -78,60 +87,10 @@ function d8tags_taxonomy_term_presave($term) {
 
   $term->uid = $result->uid;
 
-  //debug($term);
-
-}
-
-/**
- * Implements hook_taxonomy_term_insert().
- */
-function d8tags_taxonomy_term_insert($term) {
-
-  $object = array(
-    'tid' => $term->tid,
-    'vid' => $term->vid,
-    'uid' => $term->uid,
-    'created' => $term->date,
-  );
-
-  $status = drupal_write_record('taxonomy_term_users', $object);
-
-}
-
-/**
- * Implements hook_taxonomy_term_update().
- */
-function d8tags_taxonomy_term_update($term) {
-
-  $object = array(
-    'tid' => $term->tid,
-    'vid' => $term->vid,
-    'uid' => $term->uid,
-    'created' => $term->created,
-  );
-
-  $status = drupal_write_record('taxonomy_term_users', $object, 'tid');
-
-}
-
-/**
- * Implements hook_taxonomy_term_delete().
- */
-function d8tags_taxonomy_term_delete($term) {
-  db_delete('taxonomy_term_users')
-    ->condition('tid', $term->tid)
-    ->execute();
-}
-
-/**
- * Implements hook_taxonomy_term_view_alter().
- */
-function d8tags_taxonomy_term_view_alter(&$build) {
 }
 
 function d8tags_form_taxonomy_form_term_alter(&$form, &$form_state, $form_id) {
 
-  //debug($form_state['term']);
   // Term author information for privileged users
    $form['term_author'] = array(
       '#type' => 'fieldset',
@@ -158,10 +117,6 @@ function d8tags_form_taxonomy_form_term_alter(&$form, &$form_state, $form_id) {
       '#default_value' => !empty($form_state['term']->date) ? $form_state['term']->date : '',
     
     );*/
-
-//    debug($form_state['term']->author);
-//    debug($form_state['term']->uid);
-//    debug($form_state['term']->vid);
 
     $vid = $form_state['term']->vid;
     // Bypass delete term access
@@ -200,8 +155,8 @@ function d8tags_autocomplete($field_name, $tags_typed = '') {
     $query->fields('t', array('tid', 'name'));
 
     if (user_access("choose only own terms")) {
-      $query->join('taxonomy_term_users', 'tu', 'tu.tid = t.tid');
-      $query->condition('tu.uid', $user->uid);
+  //    $query->join('taxonomy_term_users', 'tu', 'tu.tid = t.tid');
+      $query->condition('t.uid', $user->uid);
     }
 
     $query->condition('t.vid', $vids);
