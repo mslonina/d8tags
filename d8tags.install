@@ -1,0 +1,78 @@
+<?php
+// $id$
+
+/**
+ * Implements hook_schema().
+ */
+function d8tags_schema() {
+  $schema['taxonomy_term_users'] = array(
+    'description' => 'Stores term author.',
+    'fields' => array(
+      'tid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unique term ID.',
+      ),
+      'vid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {taxonomy_vocabulary}.vid of the vocabulary to which the term is assigned',
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The user who created the term.',
+        'default' => 1,
+      ),
+    ),
+    'foreign keys' => array(
+      'vocabulary' => array(
+        'table' => 'taxonomy_vocabulary',
+        'columns' => array('vid' => 'vid'),
+      ),
+      'user' => array(
+        'table' => 'users',
+        'columns' => array('uid' => 'uid'),
+      ),
+    ),
+  );
+
+  return $schema;
+}
+
+function d8tags_install() {
+  // Should assign all existing terms to user 1
+  foreach (taxonomy_get_vocabularies() as $vocabulary) {
+    $tree = taxonomy_get_tree($vocabulary->vid);
+    foreach ($tree as $term) {
+    db_insert('taxonomy_term_users')
+      ->fields(array(
+        'uid' => 1,
+        'vid' => $vocabulary->vid,
+        'tid' => $term->tid,
+      ))
+      ->execute();
+    }
+  }
+}
+
+function d8tags_update_7002() {
+  $field = array(
+    'type' => 'int',
+    'description' => 'The Unix timestamp when the term was created.',
+    'not null' => TRUE,
+    'default' => 0,
+  );
+
+  db_add_field('taxonomy_term_users', 'created', $field);
+}
+
+function d8tags_uninstall() {
+
+}
+

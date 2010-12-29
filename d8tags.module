@@ -1,0 +1,234 @@
+<?php
+
+/**
+ * Implements hook_permission().
+ */
+function d8tags_permission() {
+
+  $permissions = array();
+
+  foreach (taxonomy_get_vocabularies() as $vocabulary) {
+    $permissions += array(
+      'edit own terms in ' . $vocabulary->vid => array(
+        'title' => t('Edit own terms in %vocabulary', array('%vocabulary' => $vocabulary->name))
+      ),
+    );
+    $permissions += array(
+      'delete own terms in ' . $vocabulary->vid => array(
+        'title' => t('Delete own terms from %vocabulary', array('%vocabulary' => $vocabulary->name))
+      ),
+    );
+  }
+  $permissions += array(
+    'choose only own terms' => array(
+      'title' => t('Choose only own terms')
+    ),
+  );
+
+  return $permissions;
+}
+
+/**
+ * Implements hook_menu_alter().
+ */
+function d8tags_menu_alter(&$items) {
+  $items['taxonomy/term/%taxonomy_term/edit']['access callback'] = 'd8tags_edit_access';
+  $items['taxonomy/autocomplete']['page callback'] = 'd8tags_autocomplete';
+}
+
+/**
+ * User access helper.
+ */
+function d8tags_edit_access($term) {
+  global $user;
+
+  if ($term->uid == $user->uid) {
+    return user_access("edit terms in $term->vid") || 
+           user_access("edit own terms in $term->vid") || 
+           user_access('administer taxonomy');
+  } 
+  else {
+    return user_access("edit terms in $term->vid") || user_access('administer taxonomy');
+  }
+}
+
+/**
+ * Implements hook_taxonomy_term_load().
+ */
+function d8tags_taxonomy_term_load($terms) {
+  $result = db_query('SELECT tu.tid, tu.uid, tu.created, u.name FROM {taxonomy_term_users} tu INNER JOIN {users} u on u.uid = tu.uid WHERE tu.tid IN (:tids)', array(':tids' => array_keys($terms)));
+  foreach ($result as $record) {
+    $terms[$record->tid]->uid = $record->uid;
+    $terms[$record->tid]->author = $record->name;
+    $terms[$record->tid]->created = $record->created;
+  }
+}
+
+/**
+ * Implements hook_taxonomy_term_presave().
+ */
+function d8tags_taxonomy_term_presave($term) {
+
+  // Update term->uid based on the user autocomplete widget
+  $result = db_select('users')
+            ->fields('users', array('uid'))
+            ->condition('name', $term->author_name)
+            ->execute()
+            ->fetchObject();
+
+  $term->uid = $result->uid;
+
+  //debug($term);
+
+}
+
+/**
+ * Implements hook_taxonomy_term_insert().
+ */
+function d8tags_taxonomy_term_insert($term) {
+
+  $object = array(
+    'tid' => $term->tid,
+    'vid' => $term->vid,
+    'uid' => $term->uid,
+    'created' => $term->date,
+  );
+
+  $status = drupal_write_record('taxonomy_term_users', $object);
+
+}
+
+/**
+ * Implements hook_taxonomy_term_update().
+ */
+function d8tags_taxonomy_term_update($term) {
+
+  $object = array(
+    'tid' => $term->tid,
+    'vid' => $term->vid,
+    'uid' => $term->uid,
+    'created' => $term->created,
+  );
+
+  $status = drupal_write_record('taxonomy_term_users', $object, 'tid');
+
+}
+
+/**
+ * Implements hook_taxonomy_term_delete().
+ */
+function d8tags_taxonomy_term_delete($term) {
+  db_delete('taxonomy_term_users')
+    ->condition('tid', $term->tid)
+    ->execute();
+}
+
+/**
+ * Implements hook_taxonomy_term_view_alter().
+ */
+function d8tags_taxonomy_term_view_alter(&$build) {
+}
+
+function d8tags_form_taxonomy_form_term_alter(&$form, &$form_state, $form_id) {
+
+  //debug($form_state['term']);
+  // Term author information for privileged users
+   $form['term_author'] = array(
+      '#type' => 'fieldset',
+      '#access' => user_access('administer taxonomy'),
+      '#title' => t('Authoring information'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#weight' => 90, 
+    );  
+    $form['term_author']['author_name'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Authored by'),
+      '#maxlength' => 60, 
+      '#autocomplete_path' => 'user/autocomplete',
+      '#default_value' => !empty($form_state['term']->author) ?  $form_state['term']->author : '',
+      '#weight' => -1,     
+      '#description' => t('Leave blank for %anonymous.', array('%anonymous' => variable_get('anonymous', t('Anonymous')))),
+    );  
+    /*$form['term_author']['date'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Authored on'),
+      '#maxlength' => 25, 
+      '#description' => t('Format: %time. The date format is YYYY-MM-DD and %timezone is the time zone offset from UTC. Leave blank to use the time of form submission.', array('%time' => !empty($form_state['term']->date) ?  date_format(date_create($form_state['term']->date), 'Y-m-d H:i:s O') : format_date($form_state['term']->created, 'custom', 'Y-m-d H:i:s O'), '%timezone' => !empty($form_state['term']->date) ?  date_format(date_create($form_state['term']->date), 'O') : format_date($form_state['term']->created, 'custom', 'O'))), 
+      '#default_value' => !empty($form_state['term']->date) ? $form_state['term']->date : '',
+    
+    );*/
+
+//    debug($form_state['term']->author);
+//    debug($form_state['term']->uid);
+//    debug($form_state['term']->vid);
+
+    $vid = $form_state['term']->vid;
+    // Bypass delete term access
+    if (user_access("delete own terms in $vid")) {
+      $form['actions']['delete']['#access'] = TRUE;
+    }
+}
+
+/**
+ * Helper function for autocompletion
+ * Reuses original taxonomy_autocomplete
+ */
+function d8tags_autocomplete($field_name, $tags_typed = '') {
+
+  global $user; 
+
+  $field = field_info_field($field_name);
+
+  // The user enters a comma-separated list of tags. We only autocomplete the last tag.
+  $tags_typed = drupal_explode_tags($tags_typed);
+  $tag_last = drupal_strtolower(array_pop($tags_typed));
+
+  $matches = array();
+  if ($tag_last != '') {
+
+    // Part of the criteria for the query come from the field's own settings.
+    $vids = array();
+    $vocabularies = taxonomy_vocabulary_get_names();
+    foreach ($field['settings']['allowed_values'] as $tree) {
+      $vids[] = $vocabularies[$tree['vocabulary']]->vid;
+    }
+
+    $query = db_select('taxonomy_term_data', 't');
+    $query->addTag('translatable');
+    $query->addTag('term_access');
+    $query->fields('t', array('tid', 'name'));
+
+    if (user_access("choose only own terms")) {
+      $query->join('taxonomy_term_users', 'tu', 'tu.tid = t.tid');
+      $query->condition('tu.uid', $user->uid);
+    }
+
+    $query->condition('t.vid', $vids);
+    $query->condition('t.name', '%' . db_like($tag_last) . '%', 'LIKE');
+
+    // Do not select already entered terms.
+    if (!empty($tags_typed)) {
+      $query->condition('t.name', $tags_typed, 'NOT IN');
+    }
+
+    $tags_return = $query->execute()->fetchAllKeyed();
+
+    $prefix = count($tags_typed) ? implode(', ', $tags_typed) . ', ' : '';
+
+    $term_matches = array();
+    foreach ($tags_return as $tid => $name) {
+      $n = $name;
+      // Term names containing commas or quotes must be wrapped in quotes.
+      if (strpos($name, ',') !== FALSE || strpos($name, '"') !== FALSE) {
+        $n = '"' . str_replace('"', '""', $name) . '"';
+      }
+      else {
+        $term_matches[$prefix . $n] = check_plain($name);
+      }
+    }
+  }
+
+  drupal_json_output($term_matches);
+}
+

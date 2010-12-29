@@ -1,0 +1,4 @@
+name = d8tags
+description = Enables users to edit own terms in selected vocalbulary
+core = 7.x
+dependencies[] = taxonomy
