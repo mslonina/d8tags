@@ -59,7 +59,7 @@ function d8tags_edit_access($term) {
 function d8tags_taxonomy_term_load($terms) {
 
   $query = db_select('taxonomy_term_data', 't');
-  $query->fields('t', array('tid', 'uid'));
+  $query->fields('t', array('tid', 'uid', 'created', 'updated'));
   $query->fields('u', array('name'));
   $query->join('users', 'u', 't.uid = u.uid');
   $query->condition('t.tid', array_keys($terms), 'IN');
@@ -67,10 +67,14 @@ function d8tags_taxonomy_term_load($terms) {
   $result = $query->execute();
 
   foreach ($result as $record) {
-    $terms[$record->tid]->uid = $record->uid;
+    //$terms[$record->tid]->uid = $record->uid;
     $terms[$record->tid]->author = $record->name;
-    //$terms[$record->tid]->created = $record->created;
+
+    //$terms[$record->tid]->date = format_date($terms[$record->tid]->created,'custom', 'Y-m-d H:i:s 0');
+    //$terms[$record->tid]->updated = strtotime($terms[$record->tid]->updated);
+    //$terms[$record->tid]->updated = $record->updated;
   }
+
 }
 
 /**
@@ -86,10 +90,13 @@ function d8tags_taxonomy_term_presave($term) {
             ->fetchObject();
 
   $term->uid = $result->uid;
+  //$term->updated = !empty($term->date) ? strtotime($term->date) : REQUEST_TIME;
 
 }
 
 function d8tags_form_taxonomy_form_term_alter(&$form, &$form_state, $form_id) {
+
+  //debug($form_state['term']);
 
   // Term author information for privileged users
    $form['term_author'] = array(
@@ -109,20 +116,26 @@ function d8tags_form_taxonomy_form_term_alter(&$form, &$form_state, $form_id) {
       '#weight' => -1,     
       '#description' => t('Leave blank for %anonymous.', array('%anonymous' => variable_get('anonymous', t('Anonymous')))),
     );  
-    /*$form['term_author']['date'] = array(
+    $form['term_author']['date'] = array(
       '#type' => 'textfield',
       '#title' => t('Authored on'),
       '#maxlength' => 25, 
-      '#description' => t('Format: %time. The date format is YYYY-MM-DD and %timezone is the time zone offset from UTC. Leave blank to use the time of form submission.', array('%time' => !empty($form_state['term']->date) ?  date_format(date_create($form_state['term']->date), 'Y-m-d H:i:s O') : format_date($form_state['term']->created, 'custom', 'Y-m-d H:i:s O'), '%timezone' => !empty($form_state['term']->date) ?  date_format(date_create($form_state['term']->date), 'O') : format_date($form_state['term']->created, 'custom', 'O'))), 
-      '#default_value' => !empty($form_state['term']->date) ? $form_state['term']->date : '',
-    
-    );*/
+      '#description' => t('Format: %time. The date format is YYYY-MM-DD and %timezone is
+      the time zone offset from UTC. Leave blank to use the time of form submission.',
+      array('%time' => !empty($form_state['term']->date) ?
+      date_format(date_create($form_state['term']->date), 'Y-m-d H:i:s O') :
+      format_date($form_state['term']->created, 'custom', 'Y-m-d H:i:s O'), '%timezone' =>
+      !empty($form_state['term']->date) ?  date_format(date_create($form_state['term']->date), 'O') : format_date($form_state['term']->created, 'custom', 'O'))), 
+//      '#default_value' => !empty($form_state['term']->updated) ?  $form_state['term']->updated : '',
+      '#default_value' => format_date(time(), 'custom', 'Y-m-d H:i:s O'),
+    );
 
     $vid = $form_state['term']->vid;
     // Bypass delete term access
     if (user_access("delete own terms in $vid")) {
       $form['actions']['delete']['#access'] = TRUE;
     }
+
 }
 
 /**
